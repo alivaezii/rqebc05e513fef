@@ -21,3 +21,4 @@ jobs:
 
       - name: Run trusted validator against the full canonical history
         run: python3 repo/check.py post-merge repo
+# probe
