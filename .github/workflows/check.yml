@@ -1,0 +1,51 @@
+name: check
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Clone trusted base ref (never the proposed head)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 200 "https://github.com/${GITHUB_REPOSITORY}.git" base
+          cd base
+          git checkout --quiet "${BASE_SHA}"
+
+      - name: Fetch proposed change list as inert data (unauthenticated public API)
+        run: |
+          set -euo pipefail
+          curl -sS -f "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" -o changed.json
+          COUNT=$(jq 'length' changed.json)
+          echo "changed file count: ${COUNT}"
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Fetch candidate file bytes as inert data (never executed, imported, or sourced)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          COUNT=$(jq 'length' changed.json)
+          if [ "${COUNT}" = "1" ]; then
+            FILENAME=$(jq -r '.[0].filename' changed.json)
+            BASENAME=$(basename "${FILENAME}")
+            curl -sS -f "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${HEAD_SHA}/${FILENAME}" -o "candidate/${BASENAME}" || true
+          fi
+
+      - name: Run trusted validator against the proposed history
+        run: python3 base/check.py pre-merge base changed.json candidate

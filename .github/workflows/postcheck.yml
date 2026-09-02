@@ -1,0 +1,23 @@
+name: postcheck
+
+on:
+  push:
+    branches: [b55d44b93]
+
+permissions:
+  contents: read
+
+jobs:
+  postcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Clone canonical history at this exact commit
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 200 "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git checkout --quiet "${GITHUB_SHA}"
+
+      - name: Run trusted validator against the full canonical history
+        run: python3 repo/check.py post-merge repo
